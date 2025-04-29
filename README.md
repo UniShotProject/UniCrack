@@ -3,6 +3,9 @@
 `unicrack` is a comprehensive tool for JWT (JSON Web Token) security testing, supporting numerous research and exploitation techniques.  
 It includes support for passive decoding, brute-force attacks, signature confusion, header manipulations, nested JWT attacks, and more.
 
+![WhatsApp Image 2025-04-29 at 19 58 50_b3ef0e90](https://github.com/user-attachments/assets/6cb0a15c-c1fd-46d2-8c50-e946bdc9296a)
+
+
 ## 🔧 Features
 
 - Decode JWTs with pretty-print output
