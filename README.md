@@ -29,7 +29,7 @@ It includes support for passive decoding, brute-force attacks, signature confusi
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/UniShotProject/unicrack.git
+git clone https://github.com/UniShotProject/UniCrack.git
 cd unicrack
 pip install -r requirements.txt
 ```
