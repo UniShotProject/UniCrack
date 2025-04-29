@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Logs and debugging
+*.log
+
+# Local environment
+.env
+.venv/
+venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code / PyCharm settings
+.vscode/
+.idea/
+
+# Hashcat output
+*.potfile
+
+# SSL keys (used if enabling HTTPS JWKS)
+*.crt
+*.key
+
+# Temporary files
+*.tmp
+*.bak

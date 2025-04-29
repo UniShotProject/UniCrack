@@ -1,0 +1,5 @@
+typer
+pyjwt>=2.7
+cryptography
+rich
+colorama
