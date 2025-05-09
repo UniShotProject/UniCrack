@@ -1,4 +1,4 @@
-# unicrack - JWT Security Testing Tool (Pentesting Edition)
+# unicrack - Swiss-army-knife for JWT research & exploitation
 
 ```
 ██╗   ██╗███╗   ██╗██╗ ██████╗██████╗  █████╗  ██████╗██╗  ██╗
