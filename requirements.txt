@@ -1,5 +1,7 @@
-typer
-pyjwt>=2.7
-cryptography
-rich
-colorama
+PyJWT>=2.7
+typer>=0.9
+rich>=13.0
+colorama>=0.4
+cryptography>=41.0
+requests>=2.31
+urllib3>=2.0
