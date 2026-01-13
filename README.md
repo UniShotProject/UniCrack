@@ -214,7 +214,8 @@ Contributions, bug reports, and feature requests are welcome! Please feel free t
 ## 👤 Author : Mon3m
 
 
-- [LinkedIn](https://www.linkedin.com/in/mohamed-abd-el-moneam-162933315)
+- [LinkedIn](https://www.linkedin.com/in/mon3m-rt-162933315)
+- [Portfolio](https://mon3m.me/)
 
 ## 📄 License
 
